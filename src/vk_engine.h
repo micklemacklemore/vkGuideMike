@@ -5,6 +5,8 @@
 
 #include <vk_types.h>
 
+#include <vector>
+
 class VulkanEngine {
 public:
 
@@ -24,6 +26,12 @@ public:
 
 	//array of image-views from the swapchain
 	std::vector<VkImageView> _swapchainImageViews;
+
+	VkQueue _graphicsQueue; //queue we will submit to
+	uint32_t _graphicsQueueFamily; //family of that queue
+
+	VkCommandPool _commandPool; //the command pool for our commands
+	VkCommandBuffer _mainCommandBuffer; //the buffer we will record into
 
 public:
 
@@ -50,4 +58,5 @@ private:
 
 	void init_vulkan();
 	void init_swapchain();
+	void init_commands(); 
 };

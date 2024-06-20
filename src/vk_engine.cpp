@@ -42,6 +42,7 @@ void VulkanEngine::init()
 
 	init_vulkan();     // create instance and device
 	init_swapchain();  // create the swapchain
+	init_commands();  // create command pool and buffer
 	
 	//everything went fine
 	_isInitialized = true;
@@ -50,7 +51,18 @@ void VulkanEngine::init()
 void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
-		
+
+		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+
+		//destroy swapchain resources
+		for (int i = 0; i < _swapchainImageViews.size(); i++) {
+			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
+		}
+
+		vkDestroyDevice(_device, nullptr);
+		vkDestroySurfaceKHR(_instance, _surface, nullptr);
+		vkb::destroy_debug_utils_messenger(_instance, _debug_messenger);
+		vkDestroyInstance(_instance, nullptr);
 		SDL_DestroyWindow(_window);
 	}
 }
@@ -128,7 +140,8 @@ void VulkanEngine::init_vulkan()
 	_chosenGPU = physicalDevice.physical_device;
 }
 
-void VulkanEngine::init_swapchain() {
+void VulkanEngine::init_swapchain() 
+{
 	vkb::SwapchainBuilder swapchainBuilder{_chosenGPU,_device,_surface };
 
 	vkb::Swapchain vkbSwapchain = swapchainBuilder
@@ -145,5 +158,10 @@ void VulkanEngine::init_swapchain() {
 	_swapchainImageViews = vkbSwapchain.get_image_views().value();
 
 	_swapchainImageFormat = vkbSwapchain.image_format;
+}
+
+void VulkanEngine::init_commands() 
+{
+
 }
 
