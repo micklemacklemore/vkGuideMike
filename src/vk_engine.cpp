@@ -51,7 +51,7 @@ void VulkanEngine::init()
 void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
-
+		vkDestroyCommandPool(_device, _commandPool, nullptr); 
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 
 		//destroy swapchain resources
@@ -130,7 +130,7 @@ void VulkanEngine::init_vulkan()
 		.select()
 		.value();
 
-	//create the final Vulkan device
+	// finally create the logical device
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 
 	vkb::Device vkbDevice = deviceBuilder.build().value();
@@ -138,6 +138,10 @@ void VulkanEngine::init_vulkan()
 	// Get the VkDevice handle used in the rest of a Vulkan application
 	_device = vkbDevice.device;
 	_chosenGPU = physicalDevice.physical_device;
+
+	// get queue handle and queue family index
+	_graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value(); 
+	_graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value(); 
 }
 
 void VulkanEngine::init_swapchain() 
@@ -162,6 +166,19 @@ void VulkanEngine::init_swapchain()
 
 void VulkanEngine::init_commands() 
 {
+	// create command pool for graphics queue
+	VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(
+		_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+	); 
+	
+	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_commandPool));
 
+	// create command buffer
+	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(
+		_commandPool, 
+		1
+	); 
+
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_mainCommandBuffer));
 }
 
