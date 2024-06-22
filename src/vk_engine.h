@@ -33,6 +33,13 @@ public:
 	VkCommandPool _commandPool; //the command pool for our commands
 	VkCommandBuffer _mainCommandBuffer; //the buffer we will record into
 
+	VkRenderPass _renderPass;
+	std::vector<VkFramebuffer> _framebuffers;
+
+	// synchronisation
+	VkSemaphore _presentSemaphore, _renderSemaphore; // wait for swap chain to finish rendering current frame before presenting(?)
+	VkFence _renderFence; // wait for GPU to finish draw command before continuing loop(?)
+
 public:
 
 	bool _isInitialized{ false };
@@ -59,4 +66,7 @@ private:
 	void init_vulkan();
 	void init_swapchain();
 	void init_commands(); 
+	void init_default_renderpass();
+	void init_framebuffers();
+	void init_sync_structures(); 
 };

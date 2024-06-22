@@ -24,5 +24,5 @@ VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
 	cmdAllocInfo.commandBufferCount = count;
 	cmdAllocInfo.level = level;
 
-    return VkCommandBufferAllocateInfo();
+    return cmdAllocInfo;
 }
