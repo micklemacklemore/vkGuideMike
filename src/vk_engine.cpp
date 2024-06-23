@@ -85,8 +85,10 @@ void VulkanEngine::cleanup()
 void VulkanEngine::init_pipelines()
 {
 	// load shaders
+
+	// "colored triangle"
 	VkShaderModule triangleFragShader;
-	if (!load_shader_module(SHADER_PREFIX("triangle.frag.spv"), &triangleFragShader))
+	if (!load_shader_module(SHADER_PREFIX("colored_triangle.frag.spv"), &triangleFragShader))
 	{
 		std::cout << "Error when building the triangle fragment shader module" << std::endl;
 	}
@@ -95,7 +97,26 @@ void VulkanEngine::init_pipelines()
 	}
 
 	VkShaderModule triangleVertexShader;
-	if (!load_shader_module(SHADER_PREFIX("triangle.vert.spv"), &triangleVertexShader))
+	if (!load_shader_module(SHADER_PREFIX("colored_triangle.vert.spv"), &triangleVertexShader))
+	{
+		std::cout << "Error when building the triangle vertex shader module" << std::endl;
+	}
+	else {
+		std::cout << "Triangle vertex shader successfully loaded" << std::endl;
+	}
+
+	// "red triangle"
+	VkShaderModule redTriangleFragShader;
+	if (!load_shader_module(SHADER_PREFIX("triangle.frag.spv"), &redTriangleFragShader))
+	{
+		std::cout << "Error when building the triangle fragment shader module" << std::endl;
+	}
+	else {
+		std::cout << "Triangle fragment shader successfully loaded" << std::endl;
+	}
+
+	VkShaderModule redTriangleVertexShader;
+	if (!load_shader_module(SHADER_PREFIX("triangle.vert.spv"), &redTriangleVertexShader))
 	{
 		std::cout << "Error when building the triangle vertex shader module" << std::endl;
 
@@ -154,6 +175,19 @@ void VulkanEngine::init_pipelines()
 
 	//finally build the pipeline
 	_trianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+
+	//clear the shader stages for the builder
+	pipelineBuilder._shaderStages.clear();
+
+	//add the other shaders
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, redTriangleVertexShader));
+
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, redTriangleFragShader));
+
+	//build the red triangle pipeline
+	_redTrianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
 }
 
 void VulkanEngine::draw()
@@ -185,7 +219,8 @@ void VulkanEngine::draw()
 	//make a clear-color from frame number. This will flash with a 120*pi frame period.
 	VkClearValue clearValue;
 	float flash = abs(sin(_frameNumber / 120.f));
-	clearValue.color = { { 0.0f, 0.0f, flash, 1.0f } };
+	// clearValue.color = { { 0.0f, 0.0f, flash, 1.0f } };
+	clearValue.color = { {0.f, 0.f, 0.f, 1.f} }; 
 
 	//start the main renderpass.
 	//We will use the clear color from above, and the framebuffer of the index the swapchain gave us
@@ -205,7 +240,17 @@ void VulkanEngine::draw()
 
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+	switch (_selectedShader) {
+		case 0:
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+			break; 
+		case 1: 
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _redTrianglePipeline);
+			break; 
+		default: 
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+	}
+
 	vkCmdDraw(cmd, 3, 1, 0, 0);
 
 	//finalize the render pass
@@ -273,11 +318,15 @@ void VulkanEngine::run()
 		//Handle events on queue
 		while (SDL_PollEvent(&e) != 0)
 		{
-			if (e.type == SDL_KEYDOWN && SDLK_e) {
-				std::cout << "'e' key pressed.\n";
-			}
-			//close the window when user alt-f4s or clicks the X button			
-			if (e.type == SDL_QUIT) bQuit = true;
+			if (e.type == SDL_KEYDOWN && SDLK_SPACE) {
+				_selectedShader += 1;
+				if(_selectedShader > 1)
+				{
+					_selectedShader = 0;
+				}
+
+				std::cout << "selected shader: " << _selectedShader << "\n";
+			} else if (e.type == SDL_QUIT) bQuit = true;
 		}
 
 		draw();

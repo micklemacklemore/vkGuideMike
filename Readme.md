@@ -1,3 +1,3 @@
 # To Do List!
 
-Up to: ch2 -- passing_data
+Up to: ch2 -- cleanup

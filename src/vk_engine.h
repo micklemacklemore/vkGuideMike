@@ -23,7 +23,8 @@ struct PipelineBuilder {
 
 class VulkanEngine {
 public:
-
+	int _selectedShader{ 0 };
+	
 	VkInstance _instance; // Vulkan library handle
 	VkDebugUtilsMessengerEXT _debug_messenger; // Vulkan debug output handle
 	VkPhysicalDevice _chosenGPU; // GPU chosen as the default device
@@ -56,6 +57,7 @@ public:
 
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipeline _trianglePipeline;
+	VkPipeline _redTrianglePipeline; 
 
 public:
 
