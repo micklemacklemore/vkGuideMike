@@ -1,3 +1,3 @@
 # To Do List!
 
-Up to: ch2 -- cleanup
+Up to: ch3 -- triangle_mesh

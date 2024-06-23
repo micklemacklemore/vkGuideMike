@@ -58,6 +58,9 @@ void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
 		vkWaitForFences(_device, 1, &_renderFence, VK_FALSE, 1000000000); 
+
+#if 0 
+		vkWaitForFences(_device, 1, &_renderFence, VK_FALSE, 1000000000); 
 		vkDestroySemaphore(_device, _renderSemaphore, nullptr); 
 		vkDestroySemaphore(_device, _presentSemaphore, nullptr); 
 		vkDestroyFence(_device, _renderFence, nullptr);
@@ -65,12 +68,13 @@ void VulkanEngine::cleanup()
 		vkDestroyCommandPool(_device, _commandPool, nullptr); 
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 		vkDestroyRenderPass(_device, _renderPass, nullptr);
-
 		//destroy swapchain resources
 		for (int i = 0; i < _framebuffers.size(); i++) {
 			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
 			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
 		}
+#endif
+		_mainDeletionQueue.flush(); 
 
 		vkDestroyDevice(_device, nullptr);
 		vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -188,6 +192,23 @@ void VulkanEngine::init_pipelines()
 
 	//build the red triangle pipeline
 	_redTrianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+
+	// ==== DELETION ====
+
+	//destroy all shader modules, outside of the queue
+	vkDestroyShaderModule(_device, redTriangleVertexShader, nullptr);
+	vkDestroyShaderModule(_device, redTriangleFragShader, nullptr);
+	vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+	vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+
+ 	_mainDeletionQueue.push_function([=]() {
+		//destroy the 2 pipelines we have created
+		vkDestroyPipeline(_device, _redTrianglePipeline, nullptr);
+        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+
+		//destroy the pipeline layout that they use
+		vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+    });
 }
 
 void VulkanEngine::draw()
@@ -324,8 +345,6 @@ void VulkanEngine::run()
 				{
 					_selectedShader = 0;
 				}
-
-				std::cout << "selected shader: " << _selectedShader << "\n";
 			} else if (e.type == SDL_QUIT) bQuit = true;
 		}
 
@@ -440,8 +459,11 @@ void VulkanEngine::init_swapchain()
 	_swapchain = vkbSwapchain.swapchain;
 	_swapchainImages = vkbSwapchain.get_images().value();
 	_swapchainImageViews = vkbSwapchain.get_image_views().value();
-
 	_swapchainImageFormat = vkbSwapchain.image_format;
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+	});
 }
 
 void VulkanEngine::init_commands() 
@@ -460,6 +482,10 @@ void VulkanEngine::init_commands()
 	); 
 
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_mainCommandBuffer));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyCommandPool(_device, _commandPool, nullptr);
+	}); 
 }
 
 void VulkanEngine::init_default_renderpass()
@@ -503,6 +529,10 @@ void VulkanEngine::init_default_renderpass()
 	renderPassInfo.pSubpasses = &subpass;
 
 	VK_CHECK(vkCreateRenderPass(_device, &renderPassInfo, nullptr, &_renderPass));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyRenderPass(_device, _renderPass, nullptr);
+    });
 }
 
 void VulkanEngine::init_framebuffers()
@@ -526,29 +556,32 @@ void VulkanEngine::init_framebuffers()
 	for (int i = 0; i < swapchain_imagecount; i++) {
 		frameBufferInfo.pAttachments = &_swapchainImageViews[i];
 		VK_CHECK(vkCreateFramebuffer(_device, &frameBufferInfo, nullptr, &_framebuffers[i]));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr); 
+			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr); 
+		}); 
 	}
 }
 
 void VulkanEngine::init_sync_structures() 
 {
 	// Build fence
-	VkFenceCreateInfo fenceCreateInfo = {};
-	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceCreateInfo.pNext = nullptr;
-
-	// we want to create the fence with the Create Signaled flag, so we can wait on it before using it on a GPU command (for the first frame)
-	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT); 
 
 	VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_renderFence));
 
 	// for the semaphores we don't need any flags
-	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	semaphoreCreateInfo.pNext = nullptr;
-	semaphoreCreateInfo.flags = 0;
+	VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info(); 
 
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_presentSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_renderSemaphore));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyFence(_device, _renderFence, nullptr); 
+		vkDestroySemaphore(_device, _presentSemaphore, nullptr); 
+		vkDestroySemaphore(_device, _renderSemaphore, nullptr);
+	});
 }
 
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)

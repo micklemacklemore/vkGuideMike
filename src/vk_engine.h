@@ -6,6 +6,27 @@
 #include <vk_types.h>
 
 #include <vector>
+#include <functional>
+#include <deque> 
+
+struct DeletionQueue
+{
+	std::deque<std::function<void()>> deletors;
+
+	// TODO: what does the && mean again?
+	void push_function(std::function<void()>&& function) {
+		deletors.push_back(function);
+	}
+
+	void flush() {
+		// reverse iterate the deletion queue to execute all the functions
+		for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+			(*it)(); //call the function
+		}
+
+		deletors.clear();
+	}
+};
 
 struct PipelineBuilder {
 	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
@@ -24,6 +45,7 @@ struct PipelineBuilder {
 class VulkanEngine {
 public:
 	int _selectedShader{ 0 };
+	DeletionQueue _mainDeletionQueue;
 	
 	VkInstance _instance; // Vulkan library handle
 	VkDebugUtilsMessengerEXT _debug_messenger; // Vulkan debug output handle
