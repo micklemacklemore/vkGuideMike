@@ -23,5 +23,18 @@ namespace vkinit {
 	VkCommandBufferAllocateInfo command_buffer_allocate_info(
 		VkCommandPool pool, uint32_t count = 1, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY
 	);
-}
+	
+	// graphics pipeline states
 
+	// createinfo used to add shaders to pipeline
+	VkPipelineShaderStageCreateInfo pipeline_shader_stage_create_info(VkShaderStageFlagBits stage, VkShaderModule shaderModule);
+	VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info();
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info(VkPrimitiveTopology topology);
+    VkPipelineRasterizationStateCreateInfo rasterization_state_create_info(VkPolygonMode polygonMode);
+    VkPipelineMultisampleStateCreateInfo multisampling_state_create_info();
+    VkPipelineColorBlendAttachmentState color_blend_attachment_state();
+
+	// determines any push constants / descriptor sets used for shaders. 
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info();
+	
+}

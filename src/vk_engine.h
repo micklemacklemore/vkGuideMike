@@ -7,6 +7,20 @@
 
 #include <vector>
 
+struct PipelineBuilder {
+	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
+	VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
+	VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
+	VkViewport _viewport;
+	VkRect2D _scissor;
+	VkPipelineRasterizationStateCreateInfo _rasterizer;
+	VkPipelineColorBlendAttachmentState _colorBlendAttachment;
+	VkPipelineMultisampleStateCreateInfo _multisampling;
+	VkPipelineLayout _pipelineLayout;
+
+	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
+};
+
 class VulkanEngine {
 public:
 
@@ -40,6 +54,9 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore; // wait for swap chain to finish rendering current frame before presenting(?)
 	VkFence _renderFence; // wait for GPU to finish draw command before continuing loop(?)
 
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
+
 public:
 
 	bool _isInitialized{ false };
@@ -55,7 +72,7 @@ public:
 	//shuts down the engine
 	void cleanup();
 
-	//draw loop
+    //draw loop
 	void draw();
 
 	//run main loop
@@ -63,10 +80,13 @@ public:
 
 private:
 
+	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
+
 	void init_vulkan();
 	void init_swapchain();
 	void init_commands(); 
 	void init_default_renderpass();
 	void init_framebuffers();
 	void init_sync_structures(); 
+	void init_pipelines();
 };
