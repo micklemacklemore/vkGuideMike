@@ -8,12 +8,19 @@
 #include <vector>
 #include <functional>
 #include <deque> 
+#include <vk_mem_alloc.h>
+#include <vk_mesh.h>
+#include <glm/glm.hpp>
+
+struct MeshPushConstants {
+	glm::vec4 data;
+	glm::mat4 render_matrix;
+};
 
 struct DeletionQueue
 {
 	std::deque<std::function<void()>> deletors;
 
-	// TODO: what does the && mean again?
 	void push_function(std::function<void()>&& function) {
 		deletors.push_back(function);
 	}
@@ -44,6 +51,8 @@ struct PipelineBuilder {
 
 class VulkanEngine {
 public:
+	VmaAllocator _allocator; //vma lib allocator
+
 	int _selectedShader{ 0 };
 	DeletionQueue _mainDeletionQueue;
 	
@@ -77,12 +86,18 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore; // wait for swap chain to finish rendering current frame before presenting(?)
 	VkFence _renderFence; // wait for GPU to finish draw command before continuing loop(?)
 
+	// pipelines
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipeline _trianglePipeline;
 	VkPipeline _redTrianglePipeline; 
 
-public:
+	VkPipelineLayout _meshPipelineLayout; 
+	VkPipeline _meshPipeline;
 
+	// mesh data
+	Mesh _triangleMesh;
+
+public:
 	bool _isInitialized{ false };
 	int _frameNumber {0};
 
@@ -103,6 +118,8 @@ public:
 	void run();
 
 private:
+	void load_meshes();
+	void upload_mesh(Mesh& mesh);
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
 
