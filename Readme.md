@@ -1,8 +1,13 @@
 # To Do List!
 
-Up to: [ch3 -- triangle_mesh_code ## The Mesh class](https://vkguide.dev/docs/chapter-3/obj_loading/)
+Up to: https://vkguide.dev/docs/chapter-3/scene_management/ 
 
-Questions: 
+* Clean up all the hardcoded pipelines and meshes from VulkanEngine class
+* Create multiple pipelines with newer shaders, and use them to render monkeys each with a different material each
+* Load more meshes. As long as it’s an obj with TRIANGLE meshes, it should work fine. Make sure on export that the obj includes normals and colors
+* Add WASD controls to the camera. For that, you would need to modify the camera matrices in the draw functions.
+* Sort the renderables array before rendering by Pipeline and Mesh, to reduce number of binds.
+
+## Questions: 
 
 * what is the purpose of a `VkVertexInputBindingDescription` and a `VkVertexInputAttributeDescription`? 
-* 

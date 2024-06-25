@@ -24,6 +24,10 @@ namespace vkinit {
 		VkCommandPool pool, uint32_t count = 1, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY
 	);
 
+	// create info's for images
+	VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
+	VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
+
 	VkFenceCreateInfo fence_create_info(VkFenceCreateFlags flags = 0);
     VkSemaphoreCreateInfo semaphore_create_info(VkSemaphoreCreateFlags flags = 0);
 
@@ -39,5 +43,5 @@ namespace vkinit {
 
 	// determines any push constants / descriptor sets used for shaders. 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info();
-	
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info(bool bDepthTest, bool bDepthWrite, VkCompareOp compareOp);
 }
