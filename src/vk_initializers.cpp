@@ -90,12 +90,9 @@ VkPipelineShaderStageCreateInfo vkinit::pipeline_shader_stage_create_info(VkShad
 	info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	info.pNext = nullptr;
 
-	//shader stage
 	info.stage = stage;
-	//module containing the code for this shader stage
 	info.module = shaderModule;
-	//the entry point of the shader
-	info.pName = "main";
+	info.pName = "main";  // entry point of shader
 	return info;
 }
 
@@ -118,7 +115,6 @@ VkPipelineInputAssemblyStateCreateInfo vkinit::input_assembly_create_info(VkPrim
 	info.pNext = nullptr;
 
 	info.topology = topology;
-	//we are not going to use primitive restart on the entire tutorial so leave it on false
 	info.primitiveRestartEnable = VK_FALSE;
 	return info;
 }

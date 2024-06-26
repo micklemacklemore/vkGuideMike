@@ -77,11 +77,6 @@ public:
 	VkDevice _device; // Vulkan device for commands
 	VkSurfaceKHR _surface; // Vulkan window surface
 
-	VkSwapchainKHR _swapchain; // from other articles
-
-	// image format expected by the windowing system
-	VkFormat _swapchainImageFormat;
-
 	// depth buffer
 	VkImageView _depthImageView; 
 	AllocatedImage _depthImage; 
@@ -89,9 +84,9 @@ public:
 
 	//array of images from the swapchain
 	std::vector<VkImage> _swapchainImages;
-
-	//array of image-views from the swapchain
 	std::vector<VkImageView> _swapchainImageViews;
+	VkSwapchainKHR _swapchain; // from other articles
+	VkFormat _swapchainImageFormat;
 
 	VkQueue _graphicsQueue; //queue we will submit to
 	uint32_t _graphicsQueueFamily; //family of that queue
@@ -106,17 +101,8 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore; // wait for swap chain to finish rendering current frame before presenting(?)
 	VkFence _renderFence; // wait for GPU to finish draw command before continuing loop(?)
 
-	// pipelines
-	VkPipelineLayout _trianglePipelineLayout;
-	VkPipeline _trianglePipeline;
-	VkPipeline _redTrianglePipeline; 
-
 	VkPipelineLayout _meshPipelineLayout; 
 	VkPipeline _meshPipeline;
-
-	// mesh data
-	Mesh _triangleMesh;
-	Mesh _monkeyMesh; 
 
 	// scene description
 	std::vector<RenderObject> _renderables;
