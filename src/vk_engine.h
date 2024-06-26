@@ -11,6 +11,7 @@
 #include <vk_mem_alloc.h>
 #include <vk_mesh.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <string>
 #include <unordered_map>
@@ -77,6 +78,10 @@ public:
 	VkDevice _device; // Vulkan device for commands
 	VkSurfaceKHR _surface; // Vulkan window surface
 
+	glm::quat _lastTrackballQ = glm::quat(1.f, 0.f, 0.f, 0.f);
+	glm::quat _currTrackballQ = glm::quat(1.f ,0.f, 0.f, 0.f); 
+	glm::vec3 _startTrackballV = glm::vec3(0.f); 
+
 	// depth buffer
 	VkImageView _depthImageView; 
 	AllocatedImage _depthImage; 
@@ -131,7 +136,9 @@ public:
     //draw loop
 	void draw();
 
-	//run main loop
+    glm::vec3 trackballProject(int pos_x, int pos_y);
+
+    //run main loop
 	void run();
 
 private:

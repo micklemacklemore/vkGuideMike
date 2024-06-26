@@ -13,6 +13,8 @@
 //bootstrap library
 #include "VkBootstrap.h"
 #include <glm/gtx/transform.hpp>
+#include <glm/gtx/string_cast.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -82,7 +84,6 @@ void VulkanEngine::init_scene()
 	monkey.mesh = get_mesh("monkey");
 	monkey.material = get_material("defaultmesh");
 	monkey.transformMatrix = glm::mat4{ 1.0f };
-
 	_renderables.push_back(monkey);
 }
 
@@ -305,6 +306,23 @@ void VulkanEngine::draw()
 	_frameNumber++;
 }
 
+glm::vec3 VulkanEngine::trackballProject(int pos_x, int pos_y) {
+	float width = static_cast<float>(_windowExtent.width); 
+	float height = static_cast<float>(_windowExtent.height);
+	float x = static_cast<float>(pos_x);
+	float y = static_cast<float>(pos_y);  
+	float s = glm::min(width, height) - 1; 
+
+	// project NDC coordinates to vector from origin of unit sphere
+	float sx = (1.f / s) * (2. * x - width + 1); 
+	float sy =  - (1.f / s) * (2. * y - height + 1); 
+	float sz = (sx * sx) + (sy * sy) > 0.5f ? 
+				0.5f / glm::sqrt((sx * sx) + (sy * sy)) : 
+				glm::sqrt(1 - (sx * sx) - (sy * sy)); 
+
+	return glm::vec3(sx, sy, sz); 
+}
+
 void VulkanEngine::run()
 {
 	SDL_Event e;
@@ -316,8 +334,33 @@ void VulkanEngine::run()
 		//Handle events on queue
 		while (SDL_PollEvent(&e) != 0)
 		{
-			if (e.type == SDL_KEYDOWN && SDLK_SPACE) {
-			} else if (e.type == SDL_QUIT) bQuit = true;
+			int pos_x, pos_y; 
+
+			if (e.type == SDL_MOUSEBUTTONDOWN) {
+				SDL_GetMouseState(&pos_x, &pos_y); 
+				_startTrackballV = glm::normalize(trackballProject(pos_x, pos_y)); 
+			}
+
+			if (SDL_GetMouseState(&pos_x, &pos_y) & SDL_BUTTON_LMASK) {
+				float width = static_cast<float>(_windowExtent.width); 
+				float height = static_cast<float>(_windowExtent.height);
+				float x = static_cast<float>(pos_x);
+				float y = static_cast<float>(pos_y);  
+				float s = glm::min(width, height) - 1; 
+
+				// project NDC coordinates to vector from origin of unit sphere
+				float sx = (1.f / s) * (2. * x - width + 1); 
+				float sy =  - (1.f / s) * (2. * y - height + 1); 
+				float sz = (sx * sx) + (sy * sy) > 0.5f ? 
+							0.5f / glm::sqrt((sx * sx) + (sy * sy)) : 
+							glm::sqrt(1 - (sx * sx) - (sy * sy)); 
+				glm::vec3 end = glm::normalize(glm::vec3(sx, sy, sz)); 
+				_currTrackballQ = glm::rotation(_startTrackballV, end); 
+			} else {
+				_lastTrackballQ = _currTrackballQ * _lastTrackballQ; 
+				_currTrackballQ = glm::quat(1.f, 0.f, 0.f, 0.f); 
+			}
+			if (e.type == SDL_QUIT) bQuit = true;
 		}
 
 		draw();
@@ -794,7 +837,9 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 			lastMaterial = object.material;
 		}
 
-		glm::mat4 model = glm::rotate(object.transformMatrix, glm::radians((float)_frameNumber * 0.3f), glm::vec3(0.f, 1.f, 0.f));
+		glm::mat4 rot = glm::toMat4(_currTrackballQ * _lastTrackballQ); 
+
+		glm::mat4 model = rot * object.transformMatrix; 
 		glm::mat4 mesh_matrix = projection * view * model;
 
 		MeshPushConstants constants;
