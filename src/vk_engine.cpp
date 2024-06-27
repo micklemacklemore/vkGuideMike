@@ -65,7 +65,7 @@ void VulkanEngine::init()
 void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
-		vkWaitForFences(_device, 1, &_renderFence, VK_FALSE, 1000000000); 
+		vkWaitForFences(_device, 1, &_renderFences[_currentFrame], VK_FALSE, 1000000000); 
 		_mainDeletionQueue.flush(); 
 
 		// destroy all objects from init_vulkan
@@ -203,18 +203,13 @@ void VulkanEngine::init_pipelines()
 void VulkanEngine::draw()
 {
 	// wait until the GPU has finished rendering the last frame. Timeout of 1 second
-	VK_CHECK(vkWaitForFences(_device, 1, &_renderFence, true, 1000000000));
-	VK_CHECK(vkResetFences(_device, 1, &_renderFence));
+	VK_CHECK(vkWaitForFences(_device, 1, &_renderFences[_currentFrame], true, 1000000000));
+	VK_CHECK(vkResetFences(_device, 1, &_renderFences[_currentFrame]));
 
 	// request image from the swapchain, one second timeout
 	uint32_t swapchainImageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, _presentSemaphore, nullptr, &swapchainImageIndex));
-
-	//now that we are sure that the commands finished executing, we can safely reset the command buffer to begin recording again.
-	VK_CHECK(vkResetCommandBuffer(_mainCommandBuffer, 0));
-
-	//naming it cmd for shorter writing
-	VkCommandBuffer cmd = _mainCommandBuffer;
+	VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, _presentSemaphores[_currentFrame], nullptr, &swapchainImageIndex));
+	VK_CHECK(vkResetCommandBuffer(_commandBuffers[_currentFrame], 0));
 
 	//begin the command buffer recording. We will use this command buffer exactly once, so we want to let Vulkan know that
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
@@ -225,7 +220,7 @@ void VulkanEngine::draw()
 	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
 	// begin recording
-	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+	VK_CHECK(vkBeginCommandBuffer(_commandBuffers[_currentFrame], &cmdBeginInfo));
 
 	// create framebuffer clear values for color and depth attachment
 
@@ -238,7 +233,6 @@ void VulkanEngine::draw()
 	VkRenderPassBeginInfo rpInfo = {};
 	rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	rpInfo.pNext = nullptr;
-
 	rpInfo.renderPass = _renderPass;
 	rpInfo.renderArea.offset.x = 0;
 	rpInfo.renderArea.offset.y = 0;
@@ -250,12 +244,12 @@ void VulkanEngine::draw()
 	VkClearValue clearValues[] = { clearValue, depthClear };
 	rpInfo.pClearValues = clearValues;
 
-	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(_commandBuffers[_currentFrame], &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	draw_objects(cmd, _renderables.data(), _renderables.size());
+	draw_objects(_commandBuffers[_currentFrame], _renderables.data(), _renderables.size());
 
-	vkCmdEndRenderPass(cmd); 
-	VK_CHECK(vkEndCommandBuffer(cmd));
+	vkCmdEndRenderPass(_commandBuffers[_currentFrame]); 
+	VK_CHECK(vkEndCommandBuffer(_commandBuffers[_currentFrame]));
 
 	// ==== SUBMIT TO QUEUE ====
 	//prepare the submission to the queue.
@@ -272,18 +266,16 @@ void VulkanEngine::draw()
 
 	// wait on present semaphore before executing the command, we're waiting for the next image in swapchain
 	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &_presentSemaphore;
-
+	submit.pWaitSemaphores = &_presentSemaphores[_currentFrame];
 	// signal render semaphore once GPU has finished executing the command
 	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &_renderSemaphore;
-
+	submit.pSignalSemaphores = &_renderSemaphores[_currentFrame];
 	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &cmd;
+	submit.pCommandBuffers = &_commandBuffers[_currentFrame];
 
 	//submit command buffer to the queue and execute it.
 	// _renderFence will now block CPU until the graphic commands finish execution
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _renderFence));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _renderFences[_currentFrame]));
 
 	// this will put the image we just rendered into the visible window.
 	// we want to wait on the _renderSemaphore for that,
@@ -291,19 +283,17 @@ void VulkanEngine::draw()
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.pNext = nullptr;
-
 	presentInfo.pSwapchains = &_swapchain;
 	presentInfo.swapchainCount = 1;
-
-	presentInfo.pWaitSemaphores = &_renderSemaphore;
+	presentInfo.pWaitSemaphores = &_renderSemaphores[_currentFrame];
 	presentInfo.waitSemaphoreCount = 1;
-
 	presentInfo.pImageIndices = &swapchainImageIndex;
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
 	//increase the number of frames drawn
 	_frameNumber++;
+	_currentFrame = (_currentFrame + 1) % _max_frames_in_flight; 
 }
 
 glm::vec3 VulkanEngine::trackballProject(int pos_x, int pos_y) {
@@ -565,6 +555,9 @@ void VulkanEngine::init_swapchain()
 
 void VulkanEngine::init_commands() 
 {
+	// resize to number of frames in flight
+	_commandBuffers.resize(_max_frames_in_flight); 
+
 	// create command pool for graphics queue
 	VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(
 		_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
@@ -575,10 +568,10 @@ void VulkanEngine::init_commands()
 	// create command buffer
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(
 		_commandPool, 
-		1
+		static_cast<uint32_t>(_commandBuffers.size())
 	); 
 
-	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_mainCommandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, _commandBuffers.data()));
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _commandPool, nullptr);
@@ -708,21 +701,27 @@ void VulkanEngine::init_framebuffers()
 
 void VulkanEngine::init_sync_structures() 
 {
-	// Build fence
+	_renderFences.resize(_max_frames_in_flight); 
+	_presentSemaphores.resize(_max_frames_in_flight); 
+	_renderSemaphores.resize(_max_frames_in_flight); 
+
+	// build fence
 	VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT); 
-
-	VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_renderFence));
-
 	// for the semaphores we don't need any flags
 	VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info(); 
 
-	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_presentSemaphore));
-	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_renderSemaphore));
+	for (size_t i = 0; i < _max_frames_in_flight; i++) {
+		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_renderFences[i]));
+		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_presentSemaphores[i]));
+		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_renderSemaphores[i]));
+	}	
 
 	_mainDeletionQueue.push_function([=]() {
-		vkDestroyFence(_device, _renderFence, nullptr); 
-		vkDestroySemaphore(_device, _presentSemaphore, nullptr); 
-		vkDestroySemaphore(_device, _renderSemaphore, nullptr);
+		for (size_t i = 0; i < _max_frames_in_flight; i++) {
+			vkDestroyFence(_device, _renderFences[i], nullptr); 
+			vkDestroySemaphore(_device, _presentSemaphores[i], nullptr); 
+			vkDestroySemaphore(_device, _renderSemaphores[i], nullptr);
+		}
 	});
 }
 
