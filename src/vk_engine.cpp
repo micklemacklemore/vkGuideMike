@@ -58,6 +58,9 @@ void VulkanEngine::init()
 	init_framebuffers();
 	init_sync_structures();
 	init_pipelines();
+	init_uniform_buffers();
+	init_descriptor_pool(); 
+	init_descriptor_set(); 
 	load_meshes();
 	init_scene();
 
@@ -104,7 +107,13 @@ void VulkanEngine::init_pipelines()
 	// input assembly is the configuration for drawing triangle lists, strips, or individual points.
 	// we are just going to draw triangle list
 	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
 	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+	VertexInputDescription vertexDescription = Vertex::getVertexDescription();
+	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
 
 	// build viewport and scissor from the swapchain extents
 	pipelineBuilder._viewport.x = 0.0f;
@@ -123,39 +132,45 @@ void VulkanEngine::init_pipelines()
 	// a single blend attachment with no blending and writing to RGBA
 	pipelineBuilder._colorBlendAttachment = vkinit::color_blend_attachment_state();
 
-	// ==== MESH PIPELINE ====
-
 	// we start from just the default empty pipeline layout info
 	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
 
-	// setup push constants
-	VkPushConstantRange push_constant;
-	// this push constant range starts at the beginning
-	push_constant.offset = 0;
-	// this push constant range takes up the size of a MeshPushConstants struct
-	push_constant.size = sizeof(MeshPushConstants);
-	// this push constant range is accessible only in the vertex shader
-	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	// ==== SETUP DESCRIPTOR SET LAYOUTS ====
 
-	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
+	// create a uniform buffer layout binding
+	VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; 
+	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+	// create a descriptor set, and attach our UBO to it
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &uboLayoutBinding;
+
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout)); 
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr); 
+	}); 
+
+	// add our descriptor set to the pipeline
+	mesh_pipeline_layout_info.setLayoutCount = 1; 
+	mesh_pipeline_layout_info.pSetLayouts = &_descriptorSetLayout; 
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_meshPipelineLayout));
 
 	pipelineBuilder._pipelineLayout = _meshPipelineLayout;
 
-	VertexInputDescription vertexDescription = Vertex::getVertexDescription();
+	// Set up the uniform buffers and provide a mapping so that we can plug in data
 
-	// connect the pipeline builder vertex input info to the one we get from Vertex
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
+	// ======
 
 	// clear the shader stages for the builder
 	pipelineBuilder._shaderStages.clear();
-
-	// compile mesh vertex shader
 
 	VkShaderModule meshVertexShader;
 	if (!load_shader_module(SHADER_PREFIX("tri_mesh.vert.spv"), &meshVertexShader))
@@ -815,6 +830,93 @@ void VulkanEngine::init_sync_structures()
 		} });
 }
 
+void VulkanEngine::init_uniform_buffers() {
+	{
+		VkDeviceSize bufferSize = sizeof(glm::mat4); 
+		_uniformBuffers.resize(_max_frames_in_flight); 
+		_uniformBufferMappings.resize(_max_frames_in_flight); 
+
+		for (size_t i = 0; i < _max_frames_in_flight; i++) {
+			VkResult result = vkinit::create_buffer(
+				_allocator, 
+				bufferSize, 
+				VMA_MEMORY_USAGE_UNKNOWN,
+				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+				_uniformBuffers[i]._buffer, 
+				_uniformBuffers[i]._allocation
+			); 
+			VK_CHECK(result); 
+			VK_CHECK(vmaMapMemory(_allocator, _uniformBuffers[i]._allocation, &_uniformBufferMappings[i])); 
+
+			_mainDeletionQueue.push_function([=]() {
+				vmaUnmapMemory(_allocator, _uniformBuffers[i]._allocation); 
+				vmaDestroyBuffer(_allocator, _uniformBuffers[i]._buffer, _uniformBuffers[i]._allocation); 
+			}); 
+		}
+	}
+}
+
+void VulkanEngine::init_descriptor_pool()
+{
+	// create a descriptor pool. This describes the total number of descriptor sets
+	// we would like, per type. We use the descriptor pool to allocate descriptor sets
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = static_cast<uint32_t>(_max_frames_in_flight);
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.maxSets = static_cast<uint32_t>(_max_frames_in_flight);
+	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool)); 
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr); 
+	}); 
+}
+
+void VulkanEngine::init_descriptor_set()
+{
+	// lets allocated our uniform descriptor set, we create an exact copy for each frame in flight
+	std::vector<VkDescriptorSetLayout> layouts(_max_frames_in_flight, _descriptorSetLayout);
+	VkDescriptorSetAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = static_cast<uint32_t>(_max_frames_in_flight);
+	allocInfo.pSetLayouts = layouts.data();
+
+	_descriptorSets.resize(_max_frames_in_flight);
+	VK_CHECK(vkAllocateDescriptorSets(_device, &allocInfo, _descriptorSets.data())); 
+
+	// for each of the descriptor sets we created, we need to specify
+	// which binding we want our uniform buffer to write into
+	for (size_t i = 0; i < _max_frames_in_flight; i++) {
+		// specify the buffer we created
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = _uniformBuffers[i]._buffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(glm::mat4);
+
+		// specify the set and binding we want to write into, as well
+		// as the buffer we'll use. 
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = _descriptorSets[i];
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite.descriptorCount = 1;
+
+		descriptorWrite.pBufferInfo = &bufferInfo;
+		descriptorWrite.pImageInfo = nullptr; // Optional
+		descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
+	}
+}
+
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
 {
 	// make viewport state from our stored viewport and scissor.
@@ -935,15 +1037,18 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 		glm::mat4 model = rot * object.transformMatrix;
 		glm::mat4 mesh_matrix = projection * view * model;
 
-		MeshPushConstants constants;
-		constants.render_matrix = mesh_matrix;
-		vkCmdPushConstants(cmd, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+		struct UBO {
+			glm::mat4 mvp; 
+		}; 
+ 
+		memcpy(_uniformBufferMappings[_currentFrame], &mesh_matrix, sizeof(glm::mat4)); 
 
 		// only bind the mesh if it's a different one from last bind
 		if (object.mesh != lastMesh)
 		{
 			VkDeviceSize offset = 0;
 			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &_descriptorSets[_currentFrame], 0, nullptr);
 			vkCmdBindIndexBuffer(cmd, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 			lastMesh = object.mesh;
 		}

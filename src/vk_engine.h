@@ -83,6 +83,12 @@ public:
 	glm::quat _currTrackballQ = glm::quat(1.f ,0.f, 0.f, 0.f); 
 	glm::vec3 _startTrackballV = glm::vec3(0.f); 
 
+	VkDescriptorPool _descriptorPool; 
+	VkDescriptorSetLayout _descriptorSetLayout; 
+	std::vector<VkDescriptorSet> _descriptorSets; 
+	std::vector<AllocatedBuffer> _uniformBuffers; 
+	std::vector<void*> _uniformBufferMappings; 
+
 	// depth buffer
 	VkImageView _depthImageView; 
 	AllocatedImage _depthImage; 
@@ -154,7 +160,10 @@ private:
 	void init_commands(); 
 	void init_default_renderpass();
 	void init_framebuffers();
-	void init_sync_structures(); 
+	void init_sync_structures();
+    void init_uniform_buffers();
+    void init_descriptor_pool(); 
+	void init_descriptor_set(); 
 	void init_pipelines();
 	void init_scene();
 };
