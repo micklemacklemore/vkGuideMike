@@ -832,7 +832,7 @@ void VulkanEngine::init_sync_structures()
 
 void VulkanEngine::init_uniform_buffers() {
 	{
-		VkDeviceSize bufferSize = sizeof(glm::mat4); 
+		VkDeviceSize bufferSize = sizeof(UBO); 
 		_uniformBuffers.resize(_max_frames_in_flight); 
 		_uniformBufferMappings.resize(_max_frames_in_flight); 
 
@@ -892,12 +892,13 @@ void VulkanEngine::init_descriptor_set()
 
 	// for each of the descriptor sets we created, we need to specify
 	// which binding we want our uniform buffer to write into
+	// so we actually attach our buffer here
 	for (size_t i = 0; i < _max_frames_in_flight; i++) {
 		// specify the buffer we created
 		VkDescriptorBufferInfo bufferInfo{};
 		bufferInfo.buffer = _uniformBuffers[i]._buffer;
 		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(glm::mat4);
+		bufferInfo.range = sizeof(UBO);
 
 		// specify the set and binding we want to write into, as well
 		// as the buffer we'll use. 
@@ -1037,11 +1038,12 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 		glm::mat4 model = rot * object.transformMatrix;
 		glm::mat4 mesh_matrix = projection * view * model;
 
-		struct UBO {
-			glm::mat4 mvp; 
+		UBO ubo {
+			.time = static_cast<float>(_frameNumber),
+			.mvp = mesh_matrix
 		}; 
  
-		memcpy(_uniformBufferMappings[_currentFrame], &mesh_matrix, sizeof(glm::mat4)); 
+		memcpy(_uniformBufferMappings[_currentFrame], &ubo, sizeof(UBO)); 
 
 		// only bind the mesh if it's a different one from last bind
 		if (object.mesh != lastMesh)

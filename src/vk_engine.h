@@ -64,6 +64,11 @@ struct PipelineBuilder {
 	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
 };
 
+struct UBO {
+	glm::mat4 mvp;
+	float time;
+}; 
+
 class VulkanEngine {
 public:
 	VmaAllocator _allocator; //vma lib allocator
