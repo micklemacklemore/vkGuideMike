@@ -32,6 +32,9 @@
 		}                                                               \
 	} while (0)
 
+#define ASSETS_PREFIX(x) (std::string("/Users/michaelmason/Desktop/vulkan-guide/assets/") + x).c_str()
+#define SHADER_PREFIX(x) (std::string("/Users/michaelmason/Desktop/vulkan-guide/shaders/") + x).c_str()
+
 void VulkanEngine::init()
 {
 	// We initialize SDL and create a window with it.
@@ -86,8 +89,6 @@ void VulkanEngine::init_scene()
 	monkey.transformMatrix = glm::mat4{1.0f};
 	_renderables.push_back(monkey);
 }
-
-#define SHADER_PREFIX(x) (std::string("/Users/michaelmason/Desktop/vulkan-guide/shaders/") + x).c_str()
 
 void VulkanEngine::init_pipelines()
 {
@@ -360,8 +361,6 @@ void VulkanEngine::run()
 		draw();
 	}
 }
-
-#define ASSETS_PREFIX(x) (std::string("/Users/michaelmason/Desktop/vulkan-guide/assets/") + x).c_str()
 
 void VulkanEngine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
