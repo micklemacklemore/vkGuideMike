@@ -48,7 +48,8 @@ void VulkanEngine::init()
 		SDL_WINDOWPOS_UNDEFINED,
 		_windowExtent.width,
 		_windowExtent.height,
-		window_flags);
+		window_flags
+	);
 
 	init_vulkan();	  // create instance and device
 	init_swapchain(); // create the swapchain
@@ -103,7 +104,6 @@ void VulkanEngine::init_pipelines()
 	// input assembly is the configuration for drawing triangle lists, strips, or individual points.
 	// we are just going to draw triangle list
 	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
 	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
 
 	// build viewport and scissor from the swapchain extents
@@ -301,18 +301,25 @@ void VulkanEngine::draw()
 
 glm::vec3 VulkanEngine::trackballProject(int pos_x, int pos_y)
 {
+	// cast everything to a float
 	float width = static_cast<float>(_windowExtent.width);
 	float height = static_cast<float>(_windowExtent.height);
 	float x = static_cast<float>(pos_x);
 	float y = static_cast<float>(pos_y);
+
+	// arcball diameter is either width or height
 	float s = glm::min(width, height) - 1;
+	float s_inverse = (1.f / s); 
 
 	// project NDC coordinates to vector from origin of unit sphere
-	float sx = (1.f / s) * (2. * x - width + 1);
-	float sy = -(1.f / s) * (2. * y - height + 1);
-	float sz = (sx * sx) + (sy * sy) > 0.5f ? 0.5f / glm::sqrt((sx * sx) + (sy * sy)) : glm::sqrt(1 - (sx * sx) - (sy * sy));
+	float sx = s_inverse * (2. * x - width + 1);
+	float sy = -s_inverse * (2. * y - height + 1);
+	float sx_sx = sx * sx; 
+	float sy_sy = sy * sy; 
 
-	return glm::vec3(sx, sy, sz);
+	float sz = (sx_sx) + (sy_sy) > 0.5f ? 0.5f / glm::sqrt((sx_sx) + (sy_sy)) : glm::sqrt(1 - (sx_sx) - (sy_sy));
+
+	return glm::normalize(glm::vec3(sx, sy, sz));
 }
 
 void VulkanEngine::run()
@@ -331,22 +338,12 @@ void VulkanEngine::run()
 			if (e.type == SDL_MOUSEBUTTONDOWN)
 			{
 				SDL_GetMouseState(&pos_x, &pos_y);
-				_startTrackballV = glm::normalize(trackballProject(pos_x, pos_y));
+				_startTrackballV = trackballProject(pos_x, pos_y);
 			}
 
 			if (SDL_GetMouseState(&pos_x, &pos_y) & SDL_BUTTON_LMASK)
 			{
-				float width = static_cast<float>(_windowExtent.width);
-				float height = static_cast<float>(_windowExtent.height);
-				float x = static_cast<float>(pos_x);
-				float y = static_cast<float>(pos_y);
-				float s = glm::min(width, height) - 1;
-
-				// project NDC coordinates to vector from origin of unit sphere
-				float sx = (1.f / s) * (2. * x - width + 1);
-				float sy = -(1.f / s) * (2. * y - height + 1);
-				float sz = (sx * sx) + (sy * sy) > 0.5f ? 0.5f / glm::sqrt((sx * sx) + (sy * sy)) : glm::sqrt(1 - (sx * sx) - (sy * sy));
-				glm::vec3 end = glm::normalize(glm::vec3(sx, sy, sz));
+				glm::vec3 end = trackballProject(pos_x, pos_y);
 				_currTrackballQ = glm::rotation(_startTrackballV, end);
 			}
 			else
@@ -357,7 +354,6 @@ void VulkanEngine::run()
 			if (e.type == SDL_QUIT)
 				bQuit = true;
 		}
-
 		draw();
 	}
 }
@@ -852,7 +848,6 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
 	// our "programmable" stages. (vertex and fragment shaders)
 	pipelineInfo.stageCount = _shaderStages.size();
 	pipelineInfo.pStages = _shaderStages.data();
-
 	pipelineInfo.pVertexInputState = &_vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &_inputAssembly;
 	pipelineInfo.pViewportState = &viewportState;
