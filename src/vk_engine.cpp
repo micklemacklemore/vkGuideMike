@@ -65,7 +65,7 @@ void VulkanEngine::init()
 void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
-		vkWaitForFences(_device, 1, &_renderFences[_currentFrame], VK_FALSE, 1000000000); 
+		vkWaitForFences(_device, _max_frames_in_flight, _renderFences.data(), VK_TRUE, 1000000000); 
 		_mainDeletionQueue.flush(); 
 
 		// destroy all objects from init_vulkan
