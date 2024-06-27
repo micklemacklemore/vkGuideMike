@@ -71,7 +71,7 @@ public:
 
 	const int _max_frames_in_flight = 2;
 	uint32_t _currentFrame = 0;
-	
+
 	DeletionQueue _mainDeletionQueue;
 	
 	VkInstance _instance; // Vulkan library handle
@@ -95,8 +95,8 @@ public:
 	VkSwapchainKHR _swapchain; // from other articles
 	VkFormat _swapchainImageFormat;
 
-	VkQueue _graphicsQueue; //queue we will submit to
-	uint32_t _graphicsQueueFamily; //family of that queue
+	VkQueue _graphicsQueue; // queue we will submit to
+	uint32_t _graphicsQueueFamily; // family of that queue
 
 	VkCommandPool _commandPool; //the command pool for our commands
 	std::vector<VkCommandBuffer> _commandBuffers; 
@@ -144,6 +144,7 @@ public:
 	void run();
 
 private:
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size); 
 	void load_meshes();
 	void upload_mesh(Mesh& mesh);
 

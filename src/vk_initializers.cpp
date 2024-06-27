@@ -1,8 +1,29 @@
 ﻿#include <vk_initializers.h>
 
+VkResult vkinit::create_buffer(VmaAllocator allocator, VkDeviceSize size, VmaMemoryUsage memoryUsage, VkBufferUsageFlags bufferUsage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VmaAllocation &allocation)
+{
+	VkBufferCreateInfo bufferInfo{}; 
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; 
+	bufferInfo.size = size; 
+	bufferInfo.usage = bufferUsage; 
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; 
+
+	VmaAllocationCreateInfo allocationInfo{}; 
+	allocationInfo.usage = memoryUsage; 
+	allocationInfo.requiredFlags = properties; 
+
+	return vmaCreateBuffer(
+			allocator, 
+			&bufferInfo, 
+			&allocationInfo, 
+			&buffer, 
+			&allocation, 
+			nullptr
+	);
+}
+
 VkCommandPoolCreateInfo vkinit::command_pool_create_info(
-    uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags
-)
+    uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags)
 {
     VkCommandPoolCreateInfo commandPoolInfo{}; 
 	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO; 
