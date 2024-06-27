@@ -2,8 +2,7 @@
 
 Up to: https://vkguide.dev/docs/chapter-4/double_buffering/
 
-
-https://vulkan-tutorial.com/en/Uniform_buffers/Descriptor_pool_and_sets 
+https://vulkan-tutorial.com/Texture_mapping/Images
 
 
 ## Questions: 
