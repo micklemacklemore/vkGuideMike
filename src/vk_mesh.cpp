@@ -1,6 +1,8 @@
 #include <vk_mesh.h>
 #include <tiny_obj_loader.h>
+
 #include <iostream>
+#include <unordered_map>
 
 VertexInputDescription Vertex::getVertexDescription()
 {
@@ -43,70 +45,47 @@ VertexInputDescription Vertex::getVertexDescription()
 
 bool Mesh::load_from_obj(const char *filename)
 {
-    //attrib will contain the vertex arrays of the file
 	tinyobj::attrib_t attrib;
-    //shapes contains the info for each separate object in the file
 	std::vector<tinyobj::shape_t> shapes;
-    //materials contains the information about the material of each shape, but we won't use it.
-    std::vector<tinyobj::material_t> materials;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn, err;
 
-    //error and warning output from the load function
-	std::string warn;
-	std::string err;
-
-    //load the OBJ file
-	tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename, nullptr);
-    //make sure to output the warnings to the console, in case there are issues with the file
-	if (!warn.empty()) {
-		std::cout << "WARN: " << warn << std::endl;
-	}
-    //if we have any error, print it to the console, and break the mesh loading.
-    //This happens if the file can't be found or is malformed
-	if (!err.empty()) {
-		std::cerr << err << std::endl;
-		return false;
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename)) {
+		throw std::runtime_error(warn + err);
 	}
 
-	// Loop over shapes
-	for (size_t s = 0; s < shapes.size(); s++) {
-		// Loop over faces(polygon)
-		size_t index_offset = 0;
-		for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
-            //hardcode loading to triangles
-			int fv = 3;
+	for (const auto& shape : shapes) {
+		for (const auto& index : shape.mesh.indices) {
+			Vertex vertex{};
 
-			// Loop over vertices in the face.
-			for (size_t v = 0; v < fv; v++) {
-				// access to vertex
-				tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+			vertex.position = glm::vec3{
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
 
-                //vertex position
-				tinyobj::real_t vx = attrib.vertices[3 * idx.vertex_index + 0];
-				tinyobj::real_t vy = attrib.vertices[3 * idx.vertex_index + 1];
-				tinyobj::real_t vz = attrib.vertices[3 * idx.vertex_index + 2];
-                //vertex normal
-            	tinyobj::real_t nx = attrib.normals[3 * idx.normal_index + 0];
-				tinyobj::real_t ny = attrib.normals[3 * idx.normal_index + 1];
-				tinyobj::real_t nz = attrib.normals[3 * idx.normal_index + 2];
+			vertex.texCoord = glm::vec2{
+				attrib.texcoords[2 * index.texcoord_index + 0],
+				1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+			};
 
-                //copy it into our vertex
-				Vertex new_vert;
-				new_vert.position.x = vx;
-				new_vert.position.y = vy;
-				new_vert.position.z = vz;
+			vertex.color = {
+				attrib.normals[3 * index.normal_index + 0],
+				attrib.normals[3 * index.normal_index + 1],
+				attrib.normals[3 * index.normal_index + 2]
+			};
 
-				new_vert.normal.x = nx;
-				new_vert.normal.y = ny;
-                new_vert.normal.z = nz;
-
-                //we are setting the vertex color as the vertex normal. This is just for display purposes
-                new_vert.color = new_vert.normal;
-				_vertices.push_back(new_vert);
+			// push back only if the vertex doesn't already exist
+			if (uniqueVertices.count(vertex) == 0) {
+				uniqueVertices[vertex] = static_cast<uint32_t>(_vertices.size());
+				_vertices.push_back(vertex);
 			}
-			index_offset += fv;
+
+			_indices.push_back(uniqueVertices[vertex]);
 		}
 	}
 
-    return true;
+	return true; 
 }

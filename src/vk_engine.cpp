@@ -410,6 +410,7 @@ void VulkanEngine::load_meshes()
 
 void VulkanEngine::upload_mesh(Mesh &mesh)
 {
+	// ==== TRANSFER VERTEX BUFFER ====
 	VkDeviceSize size = mesh._vertices.size() * sizeof(Vertex);
 	AllocatedBuffer stagingBuffer; 
 
@@ -450,10 +451,47 @@ void VulkanEngine::upload_mesh(Mesh &mesh)
 	// no longer need the staging buffer
 	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 
+	// ==== TRANSFER INDEX BUFFER ====
+	size = sizeof(mesh._indices[0]) * mesh._indices.size(); 
+
+	// create staging buffer
+	result = vkinit::create_buffer(
+		_allocator, 
+		size, 
+		VMA_MEMORY_USAGE_UNKNOWN,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		stagingBuffer._buffer,
+		stagingBuffer._allocation
+	); 
+	VK_CHECK(result); 
+
+	// copy indice data into host memory
+	vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
+	memcpy(data, mesh._indices.data(), mesh._indices.size() * sizeof(mesh._indices[0]));
+	vmaUnmapMemory(_allocator, stagingBuffer._allocation);
+
+	// create device local buffer
+	result = vkinit::create_buffer(
+		_allocator,
+		size, 
+		VMA_MEMORY_USAGE_UNKNOWN, 
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		mesh._indexBuffer._buffer, 
+		mesh._indexBuffer._allocation
+	); 
+
+	VK_CHECK(result); 
+
+	copyBuffer(stagingBuffer._buffer, mesh._indexBuffer._buffer, size);
+	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation); 
+
 	// add the destruction of triangle mesh buffer to the deletion queue
 	_mainDeletionQueue.push_function([=]()
 	{  
 		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation); 
+		vmaDestroyBuffer(_allocator, mesh._indexBuffer._buffer, mesh._indexBuffer._allocation); 
 	});
 }
 
@@ -899,7 +937,6 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 		}
 
 		glm::mat4 rot = glm::toMat4(_currTrackballQ * _lastTrackballQ);
-
 		glm::mat4 model = rot * object.transformMatrix;
 		glm::mat4 mesh_matrix = projection * view * model;
 
@@ -912,10 +949,11 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 		{
 			VkDeviceSize offset = 0;
 			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(cmd, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 			lastMesh = object.mesh;
 		}
 
-		vkCmdDraw(cmd, object.mesh->_vertices.size(), 1, 0, 0);
+		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, 0);
 	}
 
 	_frameNumber++;
