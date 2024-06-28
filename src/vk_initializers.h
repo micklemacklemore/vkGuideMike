@@ -8,9 +8,21 @@
 
 namespace vkinit
 {
-	VkResult create_buffer(VmaAllocator allocator, VkDeviceSize size, VmaMemoryUsage memoryUsage, VkBufferUsageFlags bufferUsage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VmaAllocation &allocation);
+    VkCommandBuffer begin_single_time_commands(VkDevice device, VkCommandPool commandPool);
+    void end_single_time_commands(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkCommandBuffer commandBuffer);
 
-	/// @brief Create a VkCommandPoolInfo with sensible defaults.
+    void copy_buffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+    void transition_image_layout(
+		VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout
+	);
+
+    void copy_buffer_to_image(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+    VkResult create_buffer(VmaAllocator allocator, VkDeviceSize size, VmaMemoryUsage memoryUsage, VkBufferUsageFlags bufferUsage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VmaAllocation &allocation);
+    VkResult create_image(VmaAllocator allocator, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VmaAllocation &imageAllocation);
+
+    /// @brief Create a VkCommandPoolInfo with sensible defaults.
 	/// @param queueFamilyIndex pick queue family index.
 	/// @param flags command pool create flags.
 	/// @return

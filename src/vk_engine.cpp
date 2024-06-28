@@ -10,6 +10,9 @@
 #include <vk_types.h>
 #include <vk_initializers.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 // bootstrap library
 #include "VkBootstrap.h"
 #include <glm/gtx/transform.hpp>
@@ -48,8 +51,7 @@ void VulkanEngine::init()
 		SDL_WINDOWPOS_UNDEFINED,
 		_windowExtent.width,
 		_windowExtent.height,
-		window_flags
-	);
+		window_flags);
 
 	init_vulkan();	  // create instance and device
 	init_swapchain(); // create the swapchain
@@ -58,9 +60,10 @@ void VulkanEngine::init()
 	init_framebuffers();
 	init_sync_structures();
 	init_pipelines();
+	init_texture_image();
 	init_uniform_buffers();
-	init_descriptor_pool(); 
-	init_descriptor_set(); 
+	init_descriptor_pool();
+	init_descriptor_set();
 	load_meshes();
 	init_scene();
 
@@ -139,10 +142,10 @@ void VulkanEngine::init_pipelines()
 
 	// create a uniform buffer layout binding
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; 
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
 	// create a descriptor set, and attach our UBO to it
@@ -151,15 +154,14 @@ void VulkanEngine::init_pipelines()
 	layoutInfo.bindingCount = 1;
 	layoutInfo.pBindings = &uboLayoutBinding;
 
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout)); 
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout));
 
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr); 
-	}); 
+	_mainDeletionQueue.push_function([=]()
+									 { vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr); });
 
 	// add our descriptor set to the pipeline
-	mesh_pipeline_layout_info.setLayoutCount = 1; 
-	mesh_pipeline_layout_info.pSetLayouts = &_descriptorSetLayout; 
+	mesh_pipeline_layout_info.setLayoutCount = 1;
+	mesh_pipeline_layout_info.pSetLayouts = &_descriptorSetLayout;
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_meshPipelineLayout));
 
@@ -324,13 +326,13 @@ glm::vec3 VulkanEngine::trackballProject(int pos_x, int pos_y)
 
 	// arcball diameter is either width or height
 	float s = glm::min(width, height) - 1;
-	float s_inverse = (1.f / s); 
+	float s_inverse = (1.f / s);
 
 	// project NDC coordinates to vector from origin of unit sphere
 	float sx = s_inverse * (2. * x - width + 1);
 	float sy = -s_inverse * (2. * y - height + 1);
-	float sx_sx = sx * sx; 
-	float sy_sy = sy * sy; 
+	float sx_sx = sx * sx;
+	float sy_sy = sy * sy;
 
 	float sz = (sx_sx) + (sy_sy) > 0.5f ? 0.5f / glm::sqrt((sx_sx) + (sy_sy)) : glm::sqrt(1 - (sx_sx) - (sy_sy));
 
@@ -373,42 +375,78 @@ void VulkanEngine::run()
 	}
 }
 
-void VulkanEngine::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+void VulkanEngine::init_texture_image()
 {
-	VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = _commandPool;
-    allocInfo.commandBufferCount = 1;
+	int texWidth, texHeight, texChannels;
+	stbi_uc *pixels = stbi_load(ASSETS_PREFIX("wahoo.bmp"), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(_device, &allocInfo, &commandBuffer);
+	// 4 bytes per pixel
+	VkDeviceSize imageSize = texWidth * texHeight * 4;
 
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	if (!pixels)
+	{
+		throw std::runtime_error("failed to load texture image!");
+	}
 
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	AllocatedBuffer stagingBuffer;
+	vkinit::create_buffer(
+		_allocator,
+		imageSize,
+		VMA_MEMORY_USAGE_UNKNOWN,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		stagingBuffer._buffer, stagingBuffer._allocation);
 
-	VkBufferCopy copyRegion{};
-	copyRegion.srcOffset = 0; // Optional
-	copyRegion.dstOffset = 0; // Optional
-	copyRegion.size = size;
+	// copy image data into staging buffer
+	void *data;
+	vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
+	memcpy(data, pixels, static_cast<size_t>(imageSize));
+	vmaUnmapMemory(_allocator, stagingBuffer._allocation);
 
-	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+	stbi_image_free(pixels);
 
-	VK_CHECK(vkEndCommandBuffer(commandBuffer)); 
+	// create image and allocate the memory
+	VK_CHECK(vkinit::create_image(
+		_allocator,
+		texWidth, texHeight,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		_textureImage._image,
+		_textureImage._allocation));
 
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
+	// transition our texture layout to optimal transfer destination, then copy from staging buffer
+	vkinit::transition_image_layout(_device, _commandPool, _graphicsQueue,
+									_textureImage._image,
+									VK_FORMAT_R8G8B8A8_SRGB,
+									VK_IMAGE_LAYOUT_UNDEFINED,			 // old layout
+									VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL // new layout
+	);
 
-	vkQueueSubmit(_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(_graphicsQueue);
+	// make the copy from staging buffer to image on device memory
+	vkinit::copy_buffer_to_image(_device, _commandPool, _graphicsQueue,
+								 stagingBuffer._buffer,
+								 _textureImage._image,
+								 static_cast<uint32_t>(texWidth),
+								 static_cast<uint32_t>(texHeight));
 
-	// free command buffer immediately
-	vkFreeCommandBuffers(_device, _commandPool, 1, &commandBuffer);
+	// finally, transition image so it's optimal for shader access
+	// transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vkinit::transition_image_layout(
+		_device, _commandPool, _graphicsQueue,
+		_textureImage._image,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,	 // old layout
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL // new layout
+	);
+
+	// free the staging buffer
+	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation); 
+
+	_mainDeletionQueue.push_function([=]() {
+		vmaDestroyImage(_allocator, _textureImage._image, _textureImage._allocation); 
+	}); 
 }
 
 void VulkanEngine::load_meshes()
@@ -423,7 +461,7 @@ void VulkanEngine::upload_mesh(Mesh &mesh)
 {
 	// ==== TRANSFER VERTEX BUFFER ====
 	VkDeviceSize size = mesh._vertices.size() * sizeof(Vertex);
-	AllocatedBuffer stagingBuffer; 
+	AllocatedBuffer stagingBuffer;
 
 	// create staging buffer
 	VkResult result = vkinit::create_buffer(
@@ -433,10 +471,9 @@ void VulkanEngine::upload_mesh(Mesh &mesh)
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		stagingBuffer._buffer,
-		stagingBuffer._allocation
-	);
+		stagingBuffer._allocation);
 
-	VK_CHECK(result); 
+	VK_CHECK(result);
 
 	// copy vertex data to staging buffer
 	void *data;
@@ -447,35 +484,33 @@ void VulkanEngine::upload_mesh(Mesh &mesh)
 	// create device local buffer
 	result = vkinit::create_buffer(
 		_allocator,
-		size, 
-		VMA_MEMORY_USAGE_UNKNOWN, 
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+		size,
+		VMA_MEMORY_USAGE_UNKNOWN,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		mesh._vertexBuffer._buffer, 
-		mesh._vertexBuffer._allocation
-	); 
+		mesh._vertexBuffer._buffer,
+		mesh._vertexBuffer._allocation);
 
-	VK_CHECK(result); 
+	VK_CHECK(result);
 
-	copyBuffer(stagingBuffer._buffer, mesh._vertexBuffer._buffer, size);
+	vkinit::copy_buffer(_device, _commandPool, _graphicsQueue, stagingBuffer._buffer, mesh._vertexBuffer._buffer, size);
 
 	// no longer need the staging buffer
 	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 
 	// ==== TRANSFER INDEX BUFFER ====
-	size = sizeof(mesh._indices[0]) * mesh._indices.size(); 
+	size = sizeof(mesh._indices[0]) * mesh._indices.size();
 
 	// create staging buffer
 	result = vkinit::create_buffer(
-		_allocator, 
-		size, 
+		_allocator,
+		size,
 		VMA_MEMORY_USAGE_UNKNOWN,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		stagingBuffer._buffer,
-		stagingBuffer._allocation
-	); 
-	VK_CHECK(result); 
+		stagingBuffer._allocation);
+	VK_CHECK(result);
 
 	// copy indice data into host memory
 	vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
@@ -485,25 +520,23 @@ void VulkanEngine::upload_mesh(Mesh &mesh)
 	// create device local buffer
 	result = vkinit::create_buffer(
 		_allocator,
-		size, 
-		VMA_MEMORY_USAGE_UNKNOWN, 
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+		size,
+		VMA_MEMORY_USAGE_UNKNOWN,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		mesh._indexBuffer._buffer, 
-		mesh._indexBuffer._allocation
-	); 
+		mesh._indexBuffer._buffer,
+		mesh._indexBuffer._allocation);
 
-	VK_CHECK(result); 
+	VK_CHECK(result);
 
-	copyBuffer(stagingBuffer._buffer, mesh._indexBuffer._buffer, size);
-	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation); 
+	vkinit::copy_buffer(_device, _commandPool, _graphicsQueue, stagingBuffer._buffer, mesh._indexBuffer._buffer, size);
+	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 
 	// add the destruction of triangle mesh buffer to the deletion queue
 	_mainDeletionQueue.push_function([=]()
-	{  
+									 {  
 		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation); 
-		vmaDestroyBuffer(_allocator, mesh._indexBuffer._buffer, mesh._indexBuffer._allocation); 
-	});
+		vmaDestroyBuffer(_allocator, mesh._indexBuffer._buffer, mesh._indexBuffer._allocation); });
 }
 
 // private functions
@@ -830,29 +863,30 @@ void VulkanEngine::init_sync_structures()
 		} });
 }
 
-void VulkanEngine::init_uniform_buffers() {
+void VulkanEngine::init_uniform_buffers()
+{
 	{
-		VkDeviceSize bufferSize = sizeof(UBO); 
-		_uniformBuffers.resize(_max_frames_in_flight); 
-		_uniformBufferMappings.resize(_max_frames_in_flight); 
+		VkDeviceSize bufferSize = sizeof(UBO);
+		_uniformBuffers.resize(_max_frames_in_flight);
+		_uniformBufferMappings.resize(_max_frames_in_flight);
 
-		for (size_t i = 0; i < _max_frames_in_flight; i++) {
+		for (size_t i = 0; i < _max_frames_in_flight; i++)
+		{
 			VkResult result = vkinit::create_buffer(
-				_allocator, 
-				bufferSize, 
+				_allocator,
+				bufferSize,
 				VMA_MEMORY_USAGE_UNKNOWN,
-				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
-				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-				_uniformBuffers[i]._buffer, 
-				_uniformBuffers[i]._allocation
-			); 
-			VK_CHECK(result); 
-			VK_CHECK(vmaMapMemory(_allocator, _uniformBuffers[i]._allocation, &_uniformBufferMappings[i])); 
+				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+				_uniformBuffers[i]._buffer,
+				_uniformBuffers[i]._allocation);
+			VK_CHECK(result);
+			VK_CHECK(vmaMapMemory(_allocator, _uniformBuffers[i]._allocation, &_uniformBufferMappings[i]));
 
-			_mainDeletionQueue.push_function([=]() {
+			_mainDeletionQueue.push_function([=]()
+											 {
 				vmaUnmapMemory(_allocator, _uniformBuffers[i]._allocation); 
-				vmaDestroyBuffer(_allocator, _uniformBuffers[i]._buffer, _uniformBuffers[i]._allocation); 
-			}); 
+				vmaDestroyBuffer(_allocator, _uniformBuffers[i]._buffer, _uniformBuffers[i]._allocation); });
 		}
 	}
 }
@@ -870,11 +904,10 @@ void VulkanEngine::init_descriptor_pool()
 	poolInfo.poolSizeCount = 1;
 	poolInfo.pPoolSizes = &poolSize;
 	poolInfo.maxSets = static_cast<uint32_t>(_max_frames_in_flight);
-	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool)); 
+	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool));
 
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr); 
-	}); 
+	_mainDeletionQueue.push_function([=]()
+									 { vkDestroyDescriptorPool(_device, _descriptorPool, nullptr); });
 }
 
 void VulkanEngine::init_descriptor_set()
@@ -888,12 +921,13 @@ void VulkanEngine::init_descriptor_set()
 	allocInfo.pSetLayouts = layouts.data();
 
 	_descriptorSets.resize(_max_frames_in_flight);
-	VK_CHECK(vkAllocateDescriptorSets(_device, &allocInfo, _descriptorSets.data())); 
+	VK_CHECK(vkAllocateDescriptorSets(_device, &allocInfo, _descriptorSets.data()));
 
 	// for each of the descriptor sets we created, we need to specify
 	// which binding we want our uniform buffer to write into
 	// so we actually attach our buffer here
-	for (size_t i = 0; i < _max_frames_in_flight; i++) {
+	for (size_t i = 0; i < _max_frames_in_flight; i++)
+	{
 		// specify the buffer we created
 		VkDescriptorBufferInfo bufferInfo{};
 		bufferInfo.buffer = _uniformBuffers[i]._buffer;
@@ -901,7 +935,7 @@ void VulkanEngine::init_descriptor_set()
 		bufferInfo.range = sizeof(UBO);
 
 		// specify the set and binding we want to write into, as well
-		// as the buffer we'll use. 
+		// as the buffer we'll use.
 		VkWriteDescriptorSet descriptorWrite{};
 		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite.dstSet = _descriptorSets[i];
@@ -911,7 +945,7 @@ void VulkanEngine::init_descriptor_set()
 		descriptorWrite.descriptorCount = 1;
 
 		descriptorWrite.pBufferInfo = &bufferInfo;
-		descriptorWrite.pImageInfo = nullptr; // Optional
+		descriptorWrite.pImageInfo = nullptr;		// Optional
 		descriptorWrite.pTexelBufferView = nullptr; // Optional
 
 		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
@@ -1038,12 +1072,11 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int co
 		glm::mat4 model = rot * object.transformMatrix;
 		glm::mat4 mesh_matrix = projection * view * model;
 
-		UBO ubo {
+		UBO ubo{
 			.time = static_cast<float>(_frameNumber),
-			.mvp = mesh_matrix
-		}; 
- 
-		memcpy(_uniformBufferMappings[_currentFrame], &ubo, sizeof(UBO)); 
+			.mvp = mesh_matrix};
+
+		memcpy(_uniformBufferMappings[_currentFrame], &ubo, sizeof(UBO));
 
 		// only bind the mesh if it's a different one from last bind
 		if (object.mesh != lastMesh)
