@@ -94,6 +94,8 @@ public:
 	std::vector<AllocatedBuffer> _uniformBuffers; 
 	std::vector<void*> _uniformBufferMappings; 
 	AllocatedImage _textureImage; 
+	VkImageView _textureImageView; 
+	VkSampler _textureSampler; 
 
 	// depth buffer
 	VkImageView _depthImageView; 
@@ -156,6 +158,8 @@ public:
 
 private:
 	void init_texture_image(); 
+	void init_texture_image_view(); 
+	void init_texture_sampler(); 
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size); 
 	void load_meshes();
 	void upload_mesh(Mesh& mesh);

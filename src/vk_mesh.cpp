@@ -8,8 +8,8 @@ VertexInputDescription Vertex::getVertexDescription()
 {
     VertexInputDescription description;
 
-	// we will have just 1 vertex buffer binding, with a per-vertex rate
-	VkVertexInputBindingDescription mainBinding = {};
+	// we will main vertex buffer binding, with a per-vertex rate
+	VkVertexInputBindingDescription mainBinding{}; 
 	mainBinding.binding = 0;
 	mainBinding.stride = sizeof(Vertex);
 	mainBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -37,9 +37,17 @@ VertexInputDescription Vertex::getVertexDescription()
 	colorAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 	colorAttribute.offset = offsetof(Vertex, color);
 
+	// texCoords at Location 3
+	VkVertexInputAttributeDescription texAttribute = {}; 
+	texAttribute.binding = 0;
+	texAttribute.location = 3;
+	texAttribute.format = VK_FORMAT_R32G32_SFLOAT;
+	texAttribute.offset = offsetof(Vertex, texCoord);
+
 	description.attributes.push_back(positionAttribute);
 	description.attributes.push_back(normalAttribute);
 	description.attributes.push_back(colorAttribute);
+	description.attributes.push_back(texAttribute); 
 	return description;
 }
 

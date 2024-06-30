@@ -61,6 +61,8 @@ void VulkanEngine::init()
 	init_sync_structures();
 	init_pipelines();
 	init_texture_image();
+	init_texture_image_view(); 
+	init_texture_sampler(); 
 	init_uniform_buffers();
 	init_descriptor_pool();
 	init_descriptor_set();
@@ -145,14 +147,23 @@ void VulkanEngine::init_pipelines()
 	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;   // vertex shader input
 	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
+	// create a layout binding for sampler
+	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+	samplerLayoutBinding.binding = 1;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;   // fragment shader input
+
+	std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
 	// create a descriptor set, and attach our UBO to it
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &uboLayoutBinding;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
 
 	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout));
 
@@ -395,7 +406,8 @@ void VulkanEngine::init_texture_image()
 		VMA_MEMORY_USAGE_UNKNOWN,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		stagingBuffer._buffer, stagingBuffer._allocation);
+		stagingBuffer._buffer, stagingBuffer._allocation
+	);
 
 	// copy image data into staging buffer
 	void *data;
@@ -446,6 +458,65 @@ void VulkanEngine::init_texture_image()
 
 	_mainDeletionQueue.push_function([=]() {
 		vmaDestroyImage(_allocator, _textureImage._image, _textureImage._allocation); 
+	}); 
+}
+
+void VulkanEngine::init_texture_image_view()
+{
+	VkImageViewCreateInfo viewInfo{};
+	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewInfo.image = _textureImage._image;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	viewInfo.subresourceRange.baseMipLevel = 0;
+	viewInfo.subresourceRange.levelCount = 1;
+	viewInfo.subresourceRange.baseArrayLayer = 0;
+	viewInfo.subresourceRange.layerCount = 1;
+
+	VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &_textureImageView)); 
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyImageView(_device, _textureImageView, nullptr); 
+	}); 
+}
+
+void VulkanEngine::init_texture_sampler()
+{
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+	// linear interpolate when image is magnified or minified
+	samplerInfo.magFilter = VK_FILTER_LINEAR;
+	samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+	// repeat texture when sampling beyond dimensions
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+	samplerInfo.anisotropyEnable = VK_TRUE;
+
+	// figure out our anisotropy value
+	{
+		VkPhysicalDeviceProperties properties{};
+		vkGetPhysicalDeviceProperties(_chosenGPU, &properties);	
+		samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy; 
+	}
+
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+	// no mip maps yet
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerInfo.mipLodBias = 0.0f;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+
+	VK_CHECK(vkCreateSampler(_device, &samplerInfo, nullptr, &_textureSampler)); 
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroySampler(_device, _textureSampler, nullptr); 
 	}); 
 }
 
@@ -609,12 +680,16 @@ void VulkanEngine::init_vulkan()
 	// get the surface of the window we opened with SDL
 	SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
+	VkPhysicalDeviceFeatures features{}; 
+	features.samplerAnisotropy = VK_TRUE; 
+
 	// use vkbootstrap to select a GPU.
 	// We want a GPU that can write to the SDL surface and supports Vulkan 1.1
 	vkb::PhysicalDeviceSelector selector{vkb_inst};
 	vkb::PhysicalDevice physicalDevice = selector
 											 .set_minimum_version(1, 1)
 											 .set_surface(_surface)
+											 .set_required_features(features)
 											 .select()
 											 .value();
 
@@ -665,7 +740,8 @@ void VulkanEngine::init_swapchain()
 	VkExtent3D depthImageExtent = {
 		_windowExtent.width,
 		_windowExtent.height,
-		1};
+		1
+	};
 
 	// hardcoding the depth format to 32 bit float
 	_depthFormat = VK_FORMAT_D32_SFLOAT;
@@ -687,10 +763,10 @@ void VulkanEngine::init_swapchain()
 	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImageView));
 
 	// add to deletion queues
-	_mainDeletionQueue.push_function([=]()
-									 {
+	_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(_device, _depthImageView, nullptr);
-		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation); });
+		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation); 
+	});
 }
 
 void VulkanEngine::init_commands()
@@ -895,19 +971,26 @@ void VulkanEngine::init_descriptor_pool()
 {
 	// create a descriptor pool. This describes the total number of descriptor sets
 	// we would like, per type. We use the descriptor pool to allocate descriptor sets
-	VkDescriptorPoolSize poolSize{};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = static_cast<uint32_t>(_max_frames_in_flight);
+	VkDescriptorPoolSize poolSizeUniform{};
+	poolSizeUniform.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizeUniform.descriptorCount = static_cast<uint32_t>(_max_frames_in_flight);
+
+	VkDescriptorPoolSize poolSizeSampler{}; 
+	poolSizeSampler.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; 
+	poolSizeSampler.descriptorCount = static_cast<uint32_t>(_max_frames_in_flight); 
+
+	std::array<VkDescriptorPoolSize, 2> poolSizeArray = {poolSizeUniform, poolSizeSampler}; 
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.poolSizeCount = poolSizeArray.size();
+	poolInfo.pPoolSizes = poolSizeArray.data();
 	poolInfo.maxSets = static_cast<uint32_t>(_max_frames_in_flight);
 	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool));
 
-	_mainDeletionQueue.push_function([=]()
-									 { vkDestroyDescriptorPool(_device, _descriptorPool, nullptr); });
+	_mainDeletionQueue.push_function([=]() { 
+		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr); 
+	});
 }
 
 void VulkanEngine::init_descriptor_set()
@@ -934,6 +1017,11 @@ void VulkanEngine::init_descriptor_set()
 		bufferInfo.offset = 0;
 		bufferInfo.range = sizeof(UBO);
 
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfo.imageView = _textureImageView;
+		imageInfo.sampler = _textureSampler;
+
 		// specify the set and binding we want to write into, as well
 		// as the buffer we'll use.
 		VkWriteDescriptorSet descriptorWrite{};
@@ -943,12 +1031,20 @@ void VulkanEngine::init_descriptor_set()
 		descriptorWrite.dstArrayElement = 0;
 		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		descriptorWrite.descriptorCount = 1;
-
 		descriptorWrite.pBufferInfo = &bufferInfo;
-		descriptorWrite.pImageInfo = nullptr;		// Optional
-		descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
+		VkWriteDescriptorSet descriptorImageWrite{}; 
+		descriptorImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorImageWrite.dstSet = _descriptorSets[i];
+		descriptorImageWrite.dstBinding = 1;
+		descriptorImageWrite.dstArrayElement = 0;
+		descriptorImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorImageWrite.descriptorCount = 1;
+		descriptorImageWrite.pImageInfo = &imageInfo;
+
+		std::array<VkWriteDescriptorSet, 2> descriptorWrites = {descriptorWrite, descriptorImageWrite};
+
+		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 }
 
